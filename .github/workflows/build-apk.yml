@@ -51,7 +51,7 @@ jobs:
 
           cp "$LOGO" app/src/main/res/drawable-nodpi/retropusbtv_logo.png
 
-          python3 -m pip install --quiet pillow
+          sudo apt-get update && sudo apt-get install -y python3-pil
           python3 - <<'PY'
           from PIL import Image, ImageOps
           import os

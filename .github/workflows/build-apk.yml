@@ -1,0 +1,243 @@
+
+name: Build RetroPUSBTV APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Create starter Android TV app
+        run: |
+          mkdir -p app/src/main/java/com/retropusbtv
+          mkdir -p app/src/main/res/values
+
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "RetroPUSBTV"
+          include(":app")
+          EOF
+
+          cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.7.3' apply false
+          }
+          EOF
+
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+              namespace 'com.retropusbtv'
+              compileSdk 35
+
+              defaultConfig {
+                  applicationId 'com.retropusbtv'
+                  minSdk 23
+                  targetSdk 28
+                  versionCode 1
+                  versionName '0.1'
+              }
+          }
+          EOF
+
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-feature
+                  android:name="android.software.leanback"
+                  android:required="false" />
+              <uses-feature
+                  android:name="android.hardware.gamepad"
+                  android:required="false" />
+              <application
+                  android:theme="@style/AppTheme"
+                  android:label="RetroPUSBTV"
+                  android:banner="@drawable/banner"
+                  android:usesCleartextTraffic="false">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          mkdir -p app/src/main/res/drawable
+
+          cat > app/src/main/res/values/styles.xml <<'EOF'
+          <resources>
+              <style name="AppTheme" parent="@android:style/Theme.Material.NoActionBar">
+                  <item name="android:fontFamily">sans</item>
+                  <item name="android:colorAccent">#55E6C1</item>
+                  <item name="android:windowLightStatusBar">false</item>
+                  <item name="android:windowBackground">#10131F</item>
+              </style>
+          </resources>
+          EOF
+
+          cat > app/src/main/java/com/retropusbtv/MainActivity.java <<'EOF'
+          package com.retropusbtv;
+
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.graphics.Color;
+          import android.view.Gravity;
+          import android.view.KeyEvent;
+          import android.view.View;
+          import android.widget.LinearLayout;
+          import android.widget.TextView;
+
+          public class MainActivity extends Activity {
+              private int selected = 0;
+              private TextView[] items;
+
+              @Override
+              public void onCreate(Bundle state) {
+                  super.onCreate(state);
+                  getWindow().getDecorView().setSystemUiVisibility(
+                      View.SYSTEM_UI_FLAG_FULLSCREEN
+                  );
+
+                  LinearLayout root = new LinearLayout(this);
+                  root.setOrientation(LinearLayout.VERTICAL);
+                  root.setGravity(Gravity.CENTER);
+                  root.setPadding(48, 24, 48, 24);
+                  root.setBackgroundColor(Color.rgb(16, 19, 31));
+
+                  TextView title = new TextView(this);
+                  title.setText("RETRO PUSBTV");
+                  title.setTextSize(34);
+                  title.setTextColor(Color.rgb(85, 230, 193));
+                  title.setGravity(Gravity.CENTER);
+                  root.addView(title);
+
+                  TextView subtitle = new TextView(this);
+                  subtitle.setText("DIN SPEL VÄRLD BÖRJAR HÄR");
+                  subtitle.setTextSize(15);
+                  subtitle.setTextColor(Color.LTGRAY);
+                  subtitle.setGravity(Gravity.CENTER);
+                  root.addView(subtitle);
+
+                  String[] names = {
+                      "Spelbibliotek",
+                      "Konsoler",
+                      "USB och minneskort",
+                      "Handkontroller",
+                      "Inställningar"
+                  };
+
+                  items = new TextView[names.length];
+
+                  for (int i = 0; i < names.length; i++) {
+                      TextView item = new TextView(this);
+                      item.setText(names[i]);
+                      item.setTextSize(22);
+                      item.setGravity(Gravity.CENTER);
+                      item.setFocusable(true);
+                      item.setPadding(24, 18, 24, 18);
+                      final int index = i;
+                      item.setOnClickListener(v -> {
+                          selected = index;
+                          updateMenu();
+                      });
+                      items[i] = item;
+                      root.addView(item);
+                  }
+
+                  TextView note = new TextView(this);
+                  note.setText("Första testversionen · Fler funktioner kommer");
+                  note.setTextColor(Color.GRAY);
+                  note.setTextSize(12);
+                  note.setGravity(Gravity.CENTER);
+                  root.addView(note);
+
+                  setContentView(root);
+                  updateMenu();
+              }
+
+              private void updateMenu() {
+                  for (int i = 0; i < items.length; i++) {
+                      items[i].setTextColor(i == selected
+                          ? Color.rgb(16, 19, 31) : Color.WHITE);
+                      items[i].setBackgroundColor(i == selected
+                          ? Color.rgb(85, 230, 193) : Color.TRANSPARENT);
+                  }
+                  items[selected].requestFocus();
+              }
+
+              @Override
+              public boolean onKeyDown(int keyCode, KeyEvent event) {
+                  if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                      selected = (selected + 1) % items.length;
+                      updateMenu();
+                      return true;
+                  }
+                  if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                      selected = (selected - 1 + items.length) % items.length;
+                      updateMenu();
+                      return true;
+                  }
+                  return super.onKeyDown(keyCode, event);
+              }
+          }
+          EOF
+
+          cat > app/src/main/res/drawable/banner.xml <<'EOF'
+          <shape xmlns:android="http://schemas.android.com/apk/res/android">
+              <solid android:color="#10131F"/>
+              <corners android:radius="8dp"/>
+          </shape>
+          EOF
+
+      - name: Build APK
+        run: gradle --no-daemon assembleDebug
+
+      - name: Save APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: RetroPUSBTV-APK
+          path: app/build/outputs/apk/debug/app-debug.apk

@@ -1,0 +1,157 @@
+
+name: Build RetroPUSBTV APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android
+        uses: android-actions/setup-android@v3
+
+      - name: Install Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Create Android app
+        run: |
+          mkdir -p app/src/main/java/com/retropusbtv
+          mkdir -p app/src/main/res/values
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "RetroPUSBTV"
+          include(":app")
+          EOF
+          cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.7.3' apply false
+              id 'org.jetbrains.kotlin.android' version '2.0.21' apply false
+          }
+          EOF
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+              id 'org.jetbrains.kotlin.android'
+          }
+          android {
+              namespace 'com.retropusbtv'
+              compileSdk 35
+              defaultConfig {
+                  applicationId 'com.retropusbtv'
+                  minSdk 23
+                  targetSdk 28
+                  versionCode 1
+                  versionName '0.1'
+              }
+          }
+          EOF
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-feature android:name="android.software.leanback" android:required="false"/>
+              <uses-feature android:name="android.hardware.gamepad" android:required="false"/>
+              <application android:theme="@style/AppTheme" android:label="RetroPUSBTV" android:banner="@android:drawable/sym_def_app_icon">
+                  <activity android:name=".MainActivity" android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                          <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+          cat > app/src/main/res/values/styles.xml <<'EOF'
+          <resources>
+              <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
+                  <item name="android:fontFamily">sans</item>
+                  <item name="android:colorAccent">#00E5FF</item>
+                  <item name="android:windowLightStatusBar">false</item>
+                  <item name="android:windowActionModeOverlay">true</item>
+                  <item name="android:windowBackground">#10131C</item>
+              </style>
+          </resources>
+          EOF
+          cat > app/src/main/java/com/retropusbtv/MainActivity.kt <<'EOF'
+          package com.retropusbtv
+
+          import android.app.Activity
+          import android.os.Bundle
+          import android.graphics.Color
+          import android.view.Gravity
+          import android.view.View
+          import android.widget.Button
+          import android.widget.LinearLayout
+          import android.widget.TextView
+
+          class MainActivity : Activity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  window.decorView.setBackgroundColor(Color.rgb(16,19,28))
+                  val layout = LinearLayout(this)
+                  layout.orientation = LinearLayout.VERTICAL
+                  layout.gravity = Gravity.CENTER
+                  layout.setPadding(40,24,40,24)
+                  val title = TextView(this)
+                  title.text = "RETROPUSBTV"
+                  title.textSize = 34f
+                  title.setTextColor(Color.rgb(0,229,255))
+                  title.gravity = Gravity.CENTER
+                  layout.addView(title)
+                  val subtitle = TextView(this)
+                  subtitle.text = "Ditt retrospelbibliotek"
+                  subtitle.textSize = 20f
+                  subtitle.setTextColor(Color.WHITE)
+                  subtitle.gravity = Gravity.CENTER
+                  layout.addView(subtitle)
+                  val info = TextView(this)
+                  info.text = "\nFörsta testversionen\n\nNästa steg är att lägga till USB-spelbibliotek och emulatorstart.\n\nDen här versionen innehåller inga spel."
+                  info.textSize = 18f
+                  info.setTextColor(Color.LTGRAY)
+                  info.gravity = Gravity.CENTER
+                  layout.addView(info)
+                  val button = Button(this)
+                  button.text = "Om RetroPUSBTV"
+                  button.setOnClickListener {
+                      info.text = "RetroPUSBTV testversion 0.1\n\nBluetooth-kontroller och TV-fjärrkontroll kan användas för Android-navigering. Emulatorstöd är ännu inte implementerat."
+                  }
+                  layout.addView(button)
+                  setContentView(layout)
+              }
+          }
+          EOF
+      - name: Build APK
+        run: gradle --no-daemon assembleDebug
+
+      - name: Save APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: RetroPUSBTV-test-APK
+          path: app/build/outputs/apk/debug/app-debug.apk

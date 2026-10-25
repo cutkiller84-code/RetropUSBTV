@@ -20,25 +20,22 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: platform-tools, platforms;android-35, build-tools;35.0.0
+          packages: "platform-tools platforms;android-35 build-tools;35.0.0"
 
-
-     
-       
       - name: Set up Gradle
-
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Create starter Android TV app
+      - name: Create Android TV app
+        shell: bash
         run: |
           mkdir -p app/src/main/java/com/retropusbtv
           mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/res/drawable
 
           cat > settings.gradle <<'EOF'
           pluginManagement {
@@ -86,20 +83,13 @@ jobs:
 
           cat > app/src/main/AndroidManifest.xml <<'EOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <uses-feature
-                  android:name="android.software.leanback"
-                  android:required="false" />
-              <uses-feature
-                  android:name="android.hardware.gamepad"
-                  android:required="false" />
+              <uses-feature android:name="android.software.leanback" android:required="false" />
+              <uses-feature android:name="android.hardware.gamepad" android:required="false" />
               <application
                   android:theme="@style/AppTheme"
                   android:label="RetroPUSBTV"
-                  android:banner="@drawable/banner"
-                  android:usesCleartextTraffic="false">
-                  <activity
-                      android:name=".MainActivity"
-                      android:exported="true">
+                  android:banner="@drawable/banner">
+                  <activity android:name=".MainActivity" android:exported="true">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
                           <category android:name="android.intent.category.LAUNCHER" />
@@ -113,17 +103,21 @@ jobs:
           </manifest>
           EOF
 
-          mkdir -p app/src/main/res/drawable
-
           cat > app/src/main/res/values/styles.xml <<'EOF'
           <resources>
               <style name="AppTheme" parent="@android:style/Theme.Material.NoActionBar">
                   <item name="android:fontFamily">sans</item>
                   <item name="android:colorAccent">#55E6C1</item>
-                  <item name="android:windowLightStatusBar">false</item>
                   <item name="android:windowBackground">#10131F</item>
               </style>
           </resources>
+          EOF
+
+          cat > app/src/main/res/drawable/banner.xml <<'EOF'
+          <shape xmlns:android="http://schemas.android.com/apk/res/android">
+              <solid android:color="#10131F"/>
+              <corners android:radius="8dp"/>
+          </shape>
           EOF
 
           cat > app/src/main/java/com/retropusbtv/MainActivity.java <<'EOF'
@@ -145,9 +139,6 @@ jobs:
               @Override
               public void onCreate(Bundle state) {
                   super.onCreate(state);
-                  getWindow().getDecorView().setSystemUiVisibility(
-                      View.SYSTEM_UI_FLAG_FULLSCREEN
-                  );
 
                   LinearLayout root = new LinearLayout(this);
                   root.setOrientation(LinearLayout.VERTICAL);
@@ -163,7 +154,7 @@ jobs:
                   root.addView(title);
 
                   TextView subtitle = new TextView(this);
-                  subtitle.setText("DIN SPEL VÄRLD BÖRJAR HÄR");
+                  subtitle.setText("DIN SPELVÄRLD BÖRJAR HÄR");
                   subtitle.setTextSize(15);
                   subtitle.setTextColor(Color.LTGRAY);
                   subtitle.setGravity(Gravity.CENTER);
@@ -195,13 +186,6 @@ jobs:
                       root.addView(item);
                   }
 
-                  TextView note = new TextView(this);
-                  note.setText("Första testversionen · Fler funktioner kommer");
-                  note.setTextColor(Color.GRAY);
-                  note.setTextSize(12);
-                  note.setGravity(Gravity.CENTER);
-                  root.addView(note);
-
                   setContentView(root);
                   updateMenu();
               }
@@ -231,13 +215,6 @@ jobs:
                   return super.onKeyDown(keyCode, event);
               }
           }
-          EOF
-
-          cat > app/src/main/res/drawable/banner.xml <<'EOF'
-          <shape xmlns:android="http://schemas.android.com/apk/res/android">
-              <solid android:color="#10131F"/>
-              <corners android:radius="8dp"/>
-          </shape>
           EOF
 
       - name: Build APK

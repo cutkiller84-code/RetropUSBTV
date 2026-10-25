@@ -14,6 +14,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
@@ -30,12 +33,52 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Create RetroPUSBTV app
+      - name: Prepare project and logo
         shell: bash
         run: |
+          set -e
+          LOGO="a_stylized_neon_glow_futuristic_app_icon_logo_st.png"
+          test -f "$LOGO" || { echo "Logo not found: $LOGO"; exit 1; }
+
           mkdir -p app/src/main/java/com/retropusbtv
           mkdir -p app/src/main/res/values
-          mkdir -p app/src/main/res/drawable
+          mkdir -p app/src/main/res/drawable-nodpi
+          mkdir -p app/src/main/res/mipmap-mdpi
+          mkdir -p app/src/main/res/mipmap-hdpi
+          mkdir -p app/src/main/res/mipmap-xhdpi
+          mkdir -p app/src/main/res/mipmap-xxhdpi
+          mkdir -p app/src/main/res/mipmap-xxxhdpi
+
+          cp "$LOGO" app/src/main/res/drawable-nodpi/retropusbtv_logo.png
+
+          python3 -m pip install --quiet pillow
+          python3 - <<'PY'
+          from PIL import Image, ImageOps
+          import os
+
+          source = Image.open(
+              "a_stylized_neon_glow_futuristic_app_icon_logo_st.png"
+          ).convert("RGBA")
+
+          # Keep the complete artwork inside the square icon.
+          sizes = {
+              "mipmap-mdpi": 48,
+              "mipmap-hdpi": 72,
+              "mipmap-xhdpi": 96,
+              "mipmap-xxhdpi": 144,
+              "mipmap-xxxhdpi": 192,
+          }
+
+          for folder, size in sizes.items():
+              canvas = Image.new("RGBA", (size, size), (15, 18, 30, 255))
+              art = ImageOps.contain(source, (int(size * .88), int(size * .88)))
+              canvas.alpha_composite(
+                  art, ((size - art.width) // 2, (size - art.height) // 2)
+              )
+              canvas.save(
+                  f"app/src/main/res/{folder}/ic_launcher.png"
+              )
+          PY
 
           cat > settings.gradle <<'EOF'
           pluginManagement {
@@ -75,28 +118,39 @@ jobs:
                   applicationId 'com.retropusbtv'
                   minSdk 23
                   targetSdk 28
-                  versionCode 2
-                  versionName '0.2'
+                  versionCode 3
+                  versionName '0.3'
               }
           }
           EOF
 
           cat > app/src/main/AndroidManifest.xml <<'EOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <uses-feature android:name="android.software.leanback" android:required="false" />
-              <uses-feature android:name="android.hardware.gamepad" android:required="false" />
+              <uses-feature
+                  android:name="android.software.leanback"
+                  android:required="false" />
+              <uses-feature
+                  android:name="android.hardware.gamepad"
+                  android:required="false" />
+
               <application
                   android:theme="@style/AppTheme"
                   android:label="RetroPUSBTV"
+                  android:icon="@mipmap/ic_launcher"
+                  android:roundIcon="@mipmap/ic_launcher"
                   android:banner="@drawable/banner"
                   android:allowBackup="true">
+
                   <activity
                       android:name=".MainActivity"
-                      android:exported="true">
+                      android:exported="true"
+                      android:screenOrientation="landscape">
+
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
                           <category android:name="android.intent.category.LAUNCHER" />
                       </intent-filter>
+
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
                           <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
@@ -128,39 +182,32 @@ jobs:
           cat > app/src/main/java/com/retropusbtv/MainActivity.java <<'EOF'
           package com.retropusbtv;
 
-          import android.app.Activity;
-          import android.app.AlertDialog;
-          import android.os.Bundle;
-          import android.content.Intent;
+          import android.app.*;
+          import android.os.*;
+          import android.content.*;
           import android.database.Cursor;
           import android.graphics.Color;
           import android.graphics.Typeface;
           import android.net.Uri;
           import android.provider.OpenableColumns;
-          import android.view.Gravity;
-          import android.view.KeyEvent;
-          import android.view.View;
-          import android.widget.LinearLayout;
-          import android.widget.ScrollView;
-          import android.widget.TextView;
-          import java.util.ArrayList;
+          import android.view.*;
+          import android.widget.*;
+          import java.util.*;
 
           public class MainActivity extends Activity {
-              private static final int PICK_FILES = 101;
-              private static final int PICK_FOLDER = 102;
-
               private final int BG = Color.rgb(15,18,30);
               private final int PANEL = Color.rgb(28,34,52);
               private final int MINT = Color.rgb(82,235,194);
               private final int WHITE = Color.WHITE;
               private final int MUTED = Color.rgb(165,176,196);
 
-              private final ArrayList<Uri> gameUris = new ArrayList<>();
-              private final ArrayList<String> gameNames = new ArrayList<>();
-              private LinearLayout root;
+              private final ArrayList<Uri> uris = new ArrayList<>();
+              private final ArrayList<String> names = new ArrayList<>();
               private LinearLayout body;
               private String page = "home";
               private TextView controllerStatus;
+              private static final int PICK_FILES = 101;
+              private static final int PICK_FOLDER = 102;
 
               private final String[] consoles = {
                   "Nintendo Entertainment System (NES)",
@@ -180,22 +227,21 @@ jobs:
                   "Commodore 64"
               };
 
-              @Override
-              public void onCreate(Bundle state) {
-                  super.onCreate(state);
+              @Override public void onCreate(Bundle b) {
+                  super.onCreate(b);
                   getWindow().setStatusBarColor(BG);
                   getWindow().setNavigationBarColor(BG);
                   loadGames();
                   showPage("home");
               }
 
-              private int dp(float value) {
-                  return (int)(value * getResources().getDisplayMetrics().density + 0.5f);
+              private int dp(float n) {
+                  return (int)(n * getResources().getDisplayMetrics().density + .5f);
               }
 
-              private TextView makeText(String value, int size, int color) {
+              private TextView text(String s, int size, int color) {
                   TextView t = new TextView(this);
-                  t.setText(value);
+                  t.setText(s);
                   t.setTextSize(size);
                   t.setTextColor(color);
                   t.setGravity(Gravity.CENTER_VERTICAL);
@@ -208,18 +254,16 @@ jobs:
                   return l;
               }
 
-              private void addButton(LinearLayout parent, String label, Runnable action) {
-                  TextView t = makeText(label, 18, WHITE);
+              private void button(String label, Runnable action) {
+                  TextView t = text(label, 18, WHITE);
+                  t.setPadding(dp(16), dp(13), dp(16), dp(13));
                   t.setBackgroundColor(PANEL);
                   t.setFocusable(true);
                   t.setClickable(true);
-                  t.setPadding(dp(16), dp(13), dp(16), dp(13));
-
-                  LinearLayout.LayoutParams params =
+                  LinearLayout.LayoutParams p =
                       new LinearLayout.LayoutParams(-1, -2);
-                  params.bottomMargin = dp(8);
-                  parent.addView(t, params);
-
+                  p.bottomMargin = dp(8);
+                  body.addView(t, p);
                   t.setOnFocusChangeListener((v, focused) -> {
                       t.setBackgroundColor(focused ? MINT : PANEL);
                       t.setTextColor(focused ? BG : WHITE);
@@ -228,36 +272,45 @@ jobs:
               }
 
               private void heading(String title, String description) {
-                  TextView h = makeText(title, 26, WHITE);
+                  TextView h = text(title, 26, WHITE);
                   h.setTypeface(null, Typeface.BOLD);
                   body.addView(h);
-
-                  TextView d = makeText(description, 14, MUTED);
+                  TextView d = text(description, 14, MUTED);
                   d.setPadding(0, dp(5), 0, dp(14));
                   body.addView(d);
               }
 
-              private void showPage(String newPage) {
-                  page = newPage;
+              private void note(String s) {
+                  TextView t = text(s, 14, MUTED);
+                  t.setPadding(dp(4), dp(12), dp(4), dp(12));
+                  body.addView(t);
+              }
 
-                  root = column();
+              private void showPage(String next) {
+                  page = next;
+                  LinearLayout root = column();
                   root.setBackgroundColor(BG);
                   root.setPadding(dp(18), dp(14), dp(18), dp(12));
 
                   LinearLayout header = new LinearLayout(this);
-                  header.setOrientation(LinearLayout.HORIZONTAL);
                   header.setGravity(Gravity.CENTER_VERTICAL);
 
-                  TextView logo = makeText("◈ RETRO PUSBTV", 23, MINT);
-                  logo.setTypeface(null, Typeface.BOLD);
-                  header.addView(logo, new LinearLayout.LayoutParams(0, -2, 1));
+                  ImageView logo = new ImageView(this);
+                  logo.setImageResource(R.drawable.retropusbtv_logo);
+                  logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                  header.addView(logo, new LinearLayout.LayoutParams(dp(72), dp(72)));
 
-                  TextView version = makeText("TEST 0.2", 11, MUTED);
+                  TextView brand = text("RETRO PUSBTV", 24, MINT);
+                  brand.setTypeface(null, Typeface.BOLD);
+                  brand.setPadding(dp(12), 0, 0, 0);
+                  header.addView(brand, new LinearLayout.LayoutParams(0, -2, 1));
+
+                  TextView version = text("0.3", 12, MUTED);
                   header.addView(version);
                   root.addView(header);
 
-                  TextView divider = makeText(
-                      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━", 12, MINT);
+                  TextView divider = text(
+                      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", 12, MINT);
                   root.addView(divider);
 
                   ScrollView scroll = new ScrollView(this);
@@ -267,257 +320,193 @@ jobs:
                   scroll.addView(body);
                   root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
-                  TextView footer = makeText(
-                      "PIL UPP/NER  •  OK/VÄLJ  •  BACK/TILLBAKA", 11, MUTED);
-                  root.addView(footer);
-
+                  root.addView(text(
+                      "PIL UPP/NER • OK/VÄLJ • BACK/TILLBAKA", 11, MUTED));
                   setContentView(root);
 
-                  switch (newPage) {
-                      case "home": homePage(); break;
-                      case "library": libraryPage(); break;
+                  switch (next) {
+                      case "home": home(); break;
+                      case "library": library(); break;
                       case "add": addPage(); break;
                       case "consoles": consolePage(); break;
                       case "usb": usbPage(); break;
                       case "controllers": controllerPage(); break;
                       case "settings": settingsPage(); break;
                       case "about": aboutPage(); break;
-                      default: homePage();
+                      default: home();
                   }
               }
 
-              private void homePage() {
+              private void home() {
                   heading("DIN SPELVÄRLD",
                       "Retrospel samlade på ett ställe.");
+                  ImageView hero = new ImageView(this);
+                  hero.setImageResource(R.drawable.retropusbtv_logo);
+                  hero.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                  LinearLayout.LayoutParams hp =
+                      new LinearLayout.LayoutParams(-1, dp(180));
+                  hp.bottomMargin = dp(10);
+                  body.addView(hero, hp);
 
-                  TextView star = makeText("✦", 54, MINT);
-                  star.setGravity(Gravity.CENTER);
-                  body.addView(star, new LinearLayout.LayoutParams(-1, dp(76)));
-
-                  addButton(body, "▶   Spelbibliotek (" + gameNames.size() + ")",
+                  button("▶   Spelbibliotek (" + names.size() + ")",
                       () -> showPage("library"));
-                  addButton(body, "＋   Lägg till spel",
-                      () -> showPage("add"));
-                  addButton(body, "▦   Konsoler och format",
-                      () -> showPage("consoles"));
-                  addButton(body, "▤   USB och minneskort",
-                      () -> showPage("usb"));
-                  addButton(body, "⌘   Handkontroller",
-                      () -> showPage("controllers"));
-                  addButton(body, "⚙   Inställningar",
-                      () -> showPage("settings"));
-
-                  TextView note = makeText(
-                      "OBS: Emulatorer och spelstart ingår inte ännu. "
-                      + "Den här testversionen hanterar menyer och filval.",
-                      12, MUTED);
-                  note.setPadding(dp(4), dp(12), dp(4), dp(4));
-                  body.addView(note);
+                  button("＋   Lägg till spel", () -> showPage("add"));
+                  button("▦   Konsoler och format", () -> showPage("consoles"));
+                  button("▤   USB och minneskort", () -> showPage("usb"));
+                  button("⌘   Handkontroller", () -> showPage("controllers"));
+                  button("⚙   Inställningar", () -> showPage("settings"));
+                  note("Testversion: spelstart och emulatorer måste integreras separat.");
               }
 
-              private void libraryPage() {
-                  heading("SPELBIBLIOTEK",
-                      gameNames.size() + " filer i ditt bibliotek.");
-
-                  if (gameNames.isEmpty()) {
-                      TextView empty = makeText(
-                          "Biblioteket är tomt. Välj Lägg till spel "
-                          + "för att importera egna ROM-filer.",
-                          16, MUTED);
-                      body.addView(empty);
-                  } else {
-                      for (int i = 0; i < gameNames.size(); i++) {
-                          final int index = i;
-                          addButton(body, "🎮  " + gameNames.get(i), () ->
-                              new AlertDialog.Builder(this)
-                                  .setTitle(gameNames.get(index))
-                                  .setMessage("Filen finns i biblioteket. "
-                                      + "För att starta spelet behövs en "
-                                      + "kompatibel emulator.")
-                                  .setPositiveButton("OK", null)
-                                  .setNeutralButton("Ta bort", (d, w) -> {
-                                      gameNames.remove(index);
-                                      gameUris.remove(index);
-                                      saveGames();
-                                      showPage("library");
-                                  })
-                                  .show());
-                      }
+              private void library() {
+                  heading("SPELBIBLIOTEK", names.size() + " sparade filer.");
+                  if (names.isEmpty()) {
+                      note("Biblioteket är tomt. Välj Lägg till spel för att importera ROM-filer.");
                   }
-
-                  addButton(body, "＋  Lägg till fler filer", this::pickFiles);
-                  addButton(body, "←  Till startsidan", () -> showPage("home"));
+                  for (int i = 0; i < names.size(); i++) {
+                      final int index = i;
+                      button("🎮  " + names.get(i), () ->
+                          new AlertDialog.Builder(this)
+                              .setTitle(names.get(index))
+                              .setMessage("Filen är sparad i biblioteket. " +
+                                  "En kompatibel emulator krävs för att starta spelet.")
+                              .setPositiveButton("OK", null)
+                              .setNeutralButton("Ta bort", (d,w) -> {
+                                  names.remove(index);
+                                  uris.remove(index);
+                                  saveGames();
+                                  showPage("library");
+                              }).show());
+                  }
+                  button("＋  Lägg till filer", this::pickFiles);
+                  button("←  Startsidan", () -> showPage("home"));
               }
 
               private void addPage() {
-                  heading("LÄGG TILL SPEL",
-                      "Välj filer eller en mapp på din enhet.");
-
-                  addButton(body, "📂  Välj ROM-filer", this::pickFiles);
-                  addButton(body, "🗂  Välj USB-/SD-mapp", this::pickFolder);
-
-                  TextView info = makeText(
-                      "Filväljaren är Androids egen. Leta upp USB-enheten "
-                      + "eller minneskortet om det visas där. Välj endast "
-                      + "spel och filer du har rätt att använda.",
-                      14, MUTED);
-                  info.setPadding(dp(4), dp(12), dp(4), dp(12));
-                  body.addView(info);
-
-                  addButton(body, "←  Till startsidan", () -> showPage("home"));
+                  heading("LÄGG TILL SPEL", "Välj spel eller en lagringsmapp.");
+                  button("📂  Välj ROM-filer", this::pickFiles);
+                  button("🗂  Välj USB-/SD-mapp", this::pickFolder);
+                  note("Använd Androids filväljare. Välj bara filer du har rätt att använda.");
+                  button("←  Startsidan", () -> showPage("home"));
               }
 
               private void pickFiles() {
-                  Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-                  intent.addCategory(Intent.CATEGORY_OPENABLE);
-                  intent.setType("*/*");
-                  intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
-                  intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
-                      | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
-                  startActivityForResult(intent, PICK_FILES);
+                  Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                  i.addCategory(Intent.CATEGORY_OPENABLE);
+                  i.setType("*/*");
+                  i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                  i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION |
+                      Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+                  startActivityForResult(i, PICK_FILES);
               }
 
               private void pickFolder() {
-                  Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
-                  intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
-                      | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
-                  startActivityForResult(intent, PICK_FOLDER);
+                  Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+                  i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION |
+                      Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+                  startActivityForResult(i, PICK_FOLDER);
               }
 
-              @Override
-              protected void onActivityResult(int request, int result, Intent data) {
+              @Override protected void onActivityResult(int request, int result, Intent data) {
                   super.onActivityResult(request, result, data);
                   if (result != RESULT_OK || data == null) return;
 
                   if (request == PICK_FILES) {
                       if (data.getClipData() != null) {
-                          for (int i = 0; i < data.getClipData().getItemCount(); i++) {
+                          for (int i = 0; i < data.getClipData().getItemCount(); i++)
                               addGame(data.getClipData().getItemAt(i).getUri());
-                          }
                       } else if (data.getData() != null) {
                           addGame(data.getData());
                       }
                       saveGames();
                       showPage("library");
                   } else if (request == PICK_FOLDER) {
-                      Uri folder = data.getData();
                       try {
                           getContentResolver().takePersistableUriPermission(
-                              folder, Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                      } catch (Exception ignored) { }
-
+                              data.getData(), Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                      } catch (Exception ignored) {}
                       new AlertDialog.Builder(this)
                           .setTitle("Mapp vald")
-                          .setMessage("Mappen har valts. Automatisk skanning "
-                              + "av undermappar är inte implementerad ännu.")
-                          .setPositiveButton("OK", (d, w) -> showPage("usb"))
+                          .setMessage("Mappen har valts. Automatisk skanning är inte implementerad ännu.")
+                          .setPositiveButton("OK", (d,w) -> showPage("usb"))
                           .show();
                   }
               }
 
               private void addGame(Uri uri) {
-                  if (gameUris.contains(uri)) return;
-                  gameUris.add(uri);
-                  gameNames.add(readName(uri));
-              }
-
-              private String readName(Uri uri) {
-                  Cursor cursor = null;
+                  if (uris.contains(uri)) return;
+                  uris.add(uri);
+                  String name = uri.getLastPathSegment();
+                  Cursor c = null;
                   try {
-                      cursor = getContentResolver().query(
-                          uri, null, null, null, null);
-                      if (cursor != null && cursor.moveToFirst()) {
-                          int index = cursor.getColumnIndex(
-                              OpenableColumns.DISPLAY_NAME);
-                          if (index >= 0) return cursor.getString(index);
+                      c = getContentResolver().query(uri, null, null, null, null);
+                      if (c != null && c.moveToFirst()) {
+                          int ix = c.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                          if (ix >= 0) name = c.getString(ix);
                       }
                   } catch (Exception ignored) {
                   } finally {
-                      if (cursor != null) cursor.close();
+                      if (c != null) c.close();
                   }
-                  String name = uri.getLastPathSegment();
-                  return name == null ? "Okänd fil" : name;
+                  names.add(name == null ? "Okänd fil" : name);
+                  try {
+                      getContentResolver().takePersistableUriPermission(
+                          uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                  } catch (Exception ignored) {}
               }
 
               private void saveGames() {
-                  StringBuilder uris = new StringBuilder();
-                  StringBuilder names = new StringBuilder();
-
-                  for (int i = 0; i < gameUris.size(); i++) {
-                      if (i > 0) {
-                          uris.append("\n");
-                          names.append("\n");
-                      }
-                      uris.append(Uri.encode(gameUris.get(i).toString()));
-                      names.append(Uri.encode(gameNames.get(i)));
+                  StringBuilder u = new StringBuilder();
+                  StringBuilder n = new StringBuilder();
+                  for (int i = 0; i < uris.size(); i++) {
+                      if (i > 0) { u.append("\n"); n.append("\n"); }
+                      u.append(Uri.encode(uris.get(i).toString()));
+                      n.append(Uri.encode(names.get(i)));
                   }
-
                   getSharedPreferences("library", MODE_PRIVATE).edit()
-                      .putString("uris", uris.toString())
-                      .putString("names", names.toString())
-                      .apply();
+                      .putString("uris", u.toString())
+                      .putString("names", n.toString()).apply();
               }
 
               private void loadGames() {
-                  String uris = getSharedPreferences("library", MODE_PRIVATE)
+                  String u = getSharedPreferences("library", MODE_PRIVATE)
                       .getString("uris", "");
-                  String names = getSharedPreferences("library", MODE_PRIVATE)
+                  String n = getSharedPreferences("library", MODE_PRIVATE)
                       .getString("names", "");
-
-                  if (uris.isEmpty() || names.isEmpty()) return;
-                  String[] uriList = uris.split("\n");
-                  String[] nameList = names.split("\n");
-
-                  for (int i = 0; i < Math.min(uriList.length, nameList.length); i++) {
+                  if (u.isEmpty() || n.isEmpty()) return;
+                  String[] us = u.split("\n");
+                  String[] ns = n.split("\n");
+                  for (int i = 0; i < Math.min(us.length, ns.length); i++) {
                       try {
-                          gameUris.add(Uri.parse(Uri.decode(uriList[i])));
-                          gameNames.add(Uri.decode(nameList[i]));
-                      } catch (Exception ignored) { }
+                          uris.add(Uri.parse(Uri.decode(us[i])));
+                          names.add(Uri.decode(ns[i]));
+                      } catch (Exception ignored) {}
                   }
               }
 
               private void consolePage() {
-                  heading("KONSOLER",
-                      "Planerade kategorier för spelbiblioteket.");
-
+                  heading("KONSOLER", "Planerade kategorier i biblioteket.");
                   for (String console : consoles) {
-                      addButton(body, "▸  " + console, () ->
+                      button("▸  " + console, () ->
                           new AlertDialog.Builder(this)
                               .setTitle(console)
-                              .setMessage("Kategorin visas i testversionen. "
-                                  + "Emulator och kompatibla format måste "
-                                  + "integreras innan spel kan startas.")
-                              .setPositiveButton("OK", null)
-                              .show());
+                              .setMessage("Emulator och kompatibla format måste integreras innan spel kan startas.")
+                              .setPositiveButton("OK", null).show());
                   }
-
-                  addButton(body, "←  Till startsidan", () -> showPage("home"));
+                  button("←  Startsidan", () -> showPage("home"));
               }
 
               private void usbPage() {
-                  heading("USB OCH MINNESKORT",
-                      "Öppna lagring via Androids systemväljare.");
-
-                  addButton(body, "🗂  Välj USB-/SD-mapp", this::pickFolder);
-                  addButton(body, "📂  Välj spel från lagring", this::pickFiles);
-
-                  TextView info = makeText(
-                      "Stödet beror på enhetens Android-version, filsystem "
-                      + "och behörigheter. Automatisk skanning av hela "
-                      + "USB-disken är inte klar ännu.",
-                      14, MUTED);
-                  info.setPadding(dp(4), dp(12), dp(4), dp(12));
-                  body.addView(info);
-
-                  addButton(body, "←  Till startsidan", () -> showPage("home"));
+                  heading("USB OCH MINNESKORT", "Öppna lagring med Androids filväljare.");
+                  button("🗂  Välj USB-/SD-mapp", this::pickFolder);
+                  button("📂  Välj spel från lagring", this::pickFiles);
+                  note("Stöd beror på enhet och filsystem. Automatisk diskskanning finns inte ännu.");
+                  button("←  Startsidan", () -> showPage("home"));
               }
 
               private void controllerPage() {
-                  heading("HANDKONTROLLER",
-                      "Testa knappar från kompatibla handkontroller.");
-
-                  controllerStatus = makeText(
-                      "Tryck på en knapp på handkontrollen …", 18, MINT);
+                  heading("HANDKONTROLLER", "Testa knappar från en kompatibel kontroll.");
+                  controllerStatus = text("Tryck på en knapp på kontrollen …", 18, MINT);
                   controllerStatus.setGravity(Gravity.CENTER);
                   controllerStatus.setFocusable(true);
                   controllerStatus.setFocusableInTouchMode(true);
@@ -525,83 +514,52 @@ jobs:
                   body.addView(controllerStatus,
                       new LinearLayout.LayoutParams(-1, dp(110)));
 
-                  controllerStatus.setOnKeyListener((v, key, event) -> {
+                  controllerStatus.setOnKeyListener((v,key,event) -> {
                       if (event.getAction() == KeyEvent.ACTION_DOWN) {
-                          controllerStatus.setText(
-                              "Registrerad knapp:\n"
-                              + KeyEvent.keyCodeToString(key)
-                              + "\nKod: " + key);
+                          controllerStatus.setText("Knapp: " +
+                              KeyEvent.keyCodeToString(key) + "\nKod: " + key);
                           return true;
                       }
                       return false;
                   });
-
-                  TextView info = makeText(
-                      "Para först Bluetooth-handkontrollen i Androids "
-                      + "Bluetooth-inställningar. Kompatibilitet varierar "
-                      + "mellan handkontroller.",
-                      14, MUTED);
-                  info.setPadding(dp(4), dp(12), dp(4), dp(12));
-                  body.addView(info);
-
-                  addButton(body, "Testa igen", () -> {
-                      controllerStatus.setText(
-                          "Tryck på en knapp på handkontrollen …");
+                  note("Para Bluetooth-kontrollen i Androids inställningar först.");
+                  button("Testa igen", () -> {
+                      controllerStatus.setText("Tryck på en knapp på kontrollen …");
                       controllerStatus.requestFocus();
                   });
-                  addButton(body, "←  Till startsidan", () -> showPage("home"));
+                  button("←  Startsidan", () -> showPage("home"));
               }
 
               private void settingsPage() {
                   heading("INSTÄLLNINGAR", "Grundinställningar.");
-
-                  addButton(body, "Rensa spellistan", () ->
+                  button("Rensa spellistan", () ->
                       new AlertDialog.Builder(this)
                           .setTitle("Rensa biblioteket?")
-                          .setMessage("Endast biblioteket i appen rensas. "
-                              + "Filerna på lagringen raderas inte.")
+                          .setMessage("Filerna på USB eller minneskort raderas inte.")
                           .setNegativeButton("Avbryt", null)
-                          .setPositiveButton("Rensa", (d, w) -> {
-                              gameUris.clear();
-                              gameNames.clear();
+                          .setPositiveButton("Rensa", (d,w) -> {
+                              uris.clear();
+                              names.clear();
                               saveGames();
                               showPage("settings");
-                          })
-                          .show());
-
-                  addButton(body, "Om appen", () -> showPage("about"));
-                  addButton(body, "←  Till startsidan", () -> showPage("home"));
+                          }).show());
+                  button("Om appen", () -> showPage("about"));
+                  button("←  Startsidan", () -> showPage("home"));
               }
 
               private void aboutPage() {
-                  heading("OM RETROPUSBTV", "Version 0.2 – testbygge.");
-
-                  TextView info = makeText(
-                      "Finns i den här versionen:\n\n"
-                      + "• Menyer och sidnavigering\n"
-                      + "• Spelbibliotek\n"
-                      + "• Val av flera filer\n"
-                      + "• Val av USB-/SD-mapp\n"
-                      + "• Konsollista\n"
-                      + "• Enkel handkontrolltestare\n\n"
-                      + "Återstår att bygga:\n\n"
-                      + "• Emulatorer och spelkärnor\n"
-                      + "• Faktisk spelstart\n"
-                      + "• Automatisk ROM-skanning\n"
-                      + "• Omslagsbilder och metadata\n"
-                      + "• Fullständig handkontrollsmappning",
-                      15, WHITE);
-                  body.addView(info);
-                  addButton(body, "←  Till startsidan", () -> showPage("home"));
+                  heading("OM RETROPUSBTV", "Version 0.3 – testbygge.");
+                  note("Ingår: logga, appikon, menyer, bibliotek, filval, USB-/SD-mappval, konsollista och enkel handkontrolltest.");
+                  note("Återstår: emulatorer/spelkärnor, faktisk spelstart, automatisk ROM-skanning, omslag och full kontrollmappning.");
+                  button("←  Startsidan", () -> showPage("home"));
               }
 
-              @Override
-              public boolean onKeyDown(int keyCode, KeyEvent event) {
-                  if (keyCode == KeyEvent.KEYCODE_BACK && !page.equals("home")) {
+              @Override public boolean onKeyDown(int key, KeyEvent event) {
+                  if (key == KeyEvent.KEYCODE_BACK && !page.equals("home")) {
                       showPage("home");
                       return true;
                   }
-                  return super.onKeyDown(keyCode, event);
+                  return super.onKeyDown(key, event);
               }
           }
           EOF

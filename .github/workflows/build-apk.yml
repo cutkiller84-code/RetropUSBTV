@@ -1,4 +1,3 @@
-
 name: Build RetroPUSBTV APK
 
 on:
@@ -12,7 +11,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -39,68 +37,42 @@ jobs:
           set -euo pipefail
 
           mkdir -p app/src/main/java/com/retropusbtv
-          mkdir -p app/src/main/res/values
-          mkdir -p app/src/main/res/drawable
+          mkdir -p app/src/main/res/values app/src/main/res/drawable
           mkdir -p app/src/main/res/drawable-nodpi
-          mkdir -p app/src/main/res/mipmap-mdpi
-          mkdir -p app/src/main/res/mipmap-hdpi
-          mkdir -p app/src/main/res/mipmap-xhdpi
-          mkdir -p app/src/main/res/mipmap-xxhdpi
-          mkdir -p app/src/main/res/mipmap-xxxhdpi
+          for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            mkdir -p "app/src/main/res/mipmap-$d"
+          done
 
           LOGO="a_stylized_neon_glow_futuristic_app_icon_logo_st.png"
-
           if [ -f "$LOGO" ]; then
             cp "$LOGO" app/src/main/res/drawable-nodpi/retropusbtv_logo.png
           else
             python3 - <<'PY'
-          import struct, zlib
-          w = h = 128
-          raw = b''.join(b'\x00' + bytes([15,18,30,255]) * w for _ in range(h))
-          def chunk(t,d):
-              return struct.pack(">I",len(d))+t+d+struct.pack(">I",zlib.crc32(t+d)&0xffffffff)
-          png = b'\x89PNG\r\n\x1a\n'
-          png += chunk(b'IHDR',struct.pack(">2I5B",w,h,8,6,0,0,0))
-          png += chunk(b'IDAT',zlib.compress(raw))
-          png += chunk(b'IEND',b'')
-          open("app/src/main/res/drawable-nodpi/retropusbtv_logo.png","wb").write(png)
+          import struct,zlib
+          def chunk(t,d): return struct.pack(">I",len(d))+t+d+struct.pack(">I",zlib.crc32(t+d)&0xffffffff)
+          w=h=128
+          raw=b''.join(b'\x00'+bytes([15,18,30,255])*w for _ in range(h))
+          p=b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack(">2I5B",w,h,8,6,0,0,0))+chunk(b'IDAT',zlib.compress(raw))+chunk(b'IEND',b'')
+          open("app/src/main/res/drawable-nodpi/retropusbtv_logo.png","wb").write(p)
           PY
           fi
 
           python3 - <<'PY'
-          import struct, zlib
-          sizes = {
-              "mipmap-mdpi": 48,
-              "mipmap-hdpi": 72,
-              "mipmap-xhdpi": 96,
-              "mipmap-xxhdpi": 144,
-              "mipmap-xxxhdpi": 192
-          }
-          for folder, size in sizes.items():
-              raw = b''.join(b'\x00' + bytes([15,18,30,255]) * size for _ in range(size))
-              def chunk(t,d):
-                  return struct.pack(">I",len(d))+t+d+struct.pack(">I",zlib.crc32(t+d)&0xffffffff)
-              png = b'\x89PNG\r\n\x1a\n'
-              png += chunk(b'IHDR',struct.pack(">2I5B",size,size,8,6,0,0,0))
-              png += chunk(b'IDAT',zlib.compress(raw))
-              png += chunk(b'IEND',b'')
-              open(f"app/src/main/res/{folder}/ic_launcher.png","wb").write(png)
+          import struct,zlib
+          def chunk(t,d): return struct.pack(">I",len(d))+t+d+struct.pack(">I",zlib.crc32(t+d)&0xffffffff)
+          for folder,size in {"mipmap-mdpi":48,"mipmap-hdpi":72,"mipmap-xhdpi":96,"mipmap-xxhdpi":144,"mipmap-xxxhdpi":192}.items():
+              raw=b''.join(b'\x00'+bytes([15,18,30,255])*size for _ in range(size))
+              p=b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack(">2I5B",size,size,8,6,0,0,0))+chunk(b'IDAT',zlib.compress(raw))+chunk(b'IEND',b'')
+              open(f"app/src/main/res/{folder}/ic_launcher.png","wb").write(p)
           PY
 
           cat > settings.gradle <<'EOF'
           pluginManagement {
-              repositories {
-                  google()
-                  mavenCentral()
-                  gradlePluginPortal()
-              }
+              repositories { google(); mavenCentral(); gradlePluginPortal() }
           }
           dependencyResolutionManagement {
               repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories {
-                  google()
-                  mavenCentral()
-              }
+              repositories { google(); mavenCentral() }
           }
           rootProject.name = "RetroPUSBTV"
           include(":app")
@@ -113,53 +85,39 @@ jobs:
           EOF
 
           cat > app/build.gradle <<'EOF'
-          plugins {
-              id 'com.android.application'
-          }
-
+          plugins { id 'com.android.application' }
           android {
               namespace 'com.retropusbtv'
               compileSdk 35
-
               defaultConfig {
                   applicationId 'com.retropusbtv'
                   minSdk 23
                   targetSdk 28
-                  versionCode 2
-                  versionName '1.1'
+                  versionCode 3
+                  versionName '1.2'
               }
           }
           EOF
 
           cat > app/src/main/AndroidManifest.xml <<'EOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-
-              <uses-feature
-                  android:name="android.software.leanback"
-                  android:required="false" />
-
-              <uses-feature
-                  android:name="android.hardware.gamepad"
-                  android:required="false" />
-
+              <uses-feature android:name="android.software.leanback" android:required="false" />
+              <uses-feature android:name="android.hardware.gamepad" android:required="false" />
               <application
                   android:theme="@style/AppTheme"
                   android:label="RetroPUSBTV"
                   android:icon="@mipmap/ic_launcher"
                   android:banner="@drawable/banner"
                   android:allowBackup="true">
-
                   <activity
                       android:name=".MainActivity"
                       android:exported="true"
                       android:screenOrientation="landscape"
                       android:configChanges="keyboard|keyboardHidden|navigation">
-
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
                           <category android:name="android.intent.category.LAUNCHER" />
                       </intent-filter>
-
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
                           <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
@@ -183,8 +141,8 @@ jobs:
 
           cat > app/src/main/res/drawable/banner.xml <<'EOF'
           <shape xmlns:android="http://schemas.android.com/apk/res/android">
-              <solid android:color="#0F121E"/>
-              <corners android:radius="8dp"/>
+              <solid android:color="#0F121E" />
+              <corners android:radius="8dp" />
           </shape>
           EOF
 
@@ -197,9 +155,10 @@ jobs:
           import android.content.ActivityNotFoundException;
           import android.content.ClipData;
           import android.content.Context;
-          import android.content.pm.PackageManager;
           import android.hardware.input.InputManager;
           import android.net.Uri;
+          import android.provider.DocumentsContract;
+          import android.database.Cursor;
           import android.graphics.Color;
           import android.graphics.Typeface;
           import android.view.InputDevice;
@@ -209,10 +168,9 @@ jobs:
           import android.view.View;
           import android.widget.*;
           import java.util.ArrayList;
+          import java.util.Locale;
 
-          public class MainActivity extends Activity
-              implements InputManager.InputDeviceListener {
-
+          public class MainActivity extends Activity implements InputManager.InputDeviceListener {
               private final int BG = Color.rgb(15,18,30);
               private final int PANEL = Color.rgb(28,34,52);
               private final int MINT = Color.rgb(82,235,194);
@@ -222,34 +180,25 @@ jobs:
               private LinearLayout body;
               private TextView controllerStatus;
               private InputManager inputManager;
-
               private final ArrayList<Uri> games = new ArrayList<>();
               private final ArrayList<String> gameNames = new ArrayList<>();
               private Uri selectedFolder;
-
               private static final int PICK_GAMES = 101;
               private static final int PICK_FOLDER = 102;
+              private static final int MAX_SCANNED_GAMES = 2000;
+              private static final int MAX_SCAN_DEPTH = 10;
 
-              @Override
-              public void onCreate(Bundle state) {
+              @Override public void onCreate(Bundle state) {
                   super.onCreate(state);
                   getWindow().setStatusBarColor(BG);
                   getWindow().setNavigationBarColor(BG);
-
-                  inputManager = (InputManager)getSystemService(
-                      Context.INPUT_SERVICE);
-                  if (inputManager != null) {
-                      inputManager.registerInputDeviceListener(this, null);
-                  }
-
+                  inputManager = (InputManager)getSystemService(Context.INPUT_SERVICE);
+                  if (inputManager != null) inputManager.registerInputDeviceListener(this, null);
                   showHome();
               }
 
-              @Override
-              protected void onDestroy() {
-                  if (inputManager != null) {
-                      inputManager.unregisterInputDeviceListener(this);
-                  }
+              @Override protected void onDestroy() {
+                  if (inputManager != null) inputManager.unregisterInputDeviceListener(this);
                   super.onDestroy();
               }
 
@@ -259,9 +208,7 @@ jobs:
 
               private TextView text(String value, int size, int color) {
                   TextView t = new TextView(this);
-                  t.setText(value);
-                  t.setTextSize(size);
-                  t.setTextColor(color);
+                  t.setText(value); t.setTextSize(size); t.setTextColor(color);
                   t.setGravity(Gravity.CENTER_VERTICAL);
                   return t;
               }
@@ -276,61 +223,41 @@ jobs:
                   LinearLayout root = column();
                   root.setBackgroundColor(BG);
                   root.setPadding(dp(22), dp(12), dp(22), dp(12));
-
                   LinearLayout header = new LinearLayout(this);
                   header.setGravity(Gravity.CENTER_VERTICAL);
-
                   ImageView logo = new ImageView(this);
                   logo.setImageResource(R.drawable.retropusbtv_logo);
                   logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
-                  header.addView(logo,
-                      new LinearLayout.LayoutParams(dp(58), dp(58)));
-
+                  header.addView(logo, new LinearLayout.LayoutParams(dp(58), dp(58)));
                   TextView brand = text("RETROPUSBTV", 24, MINT);
                   brand.setTypeface(null, Typeface.BOLD);
                   brand.setPadding(dp(12), 0, 0, 0);
-                  header.addView(brand,
-                      new LinearLayout.LayoutParams(0, -2, 1));
+                  header.addView(brand, new LinearLayout.LayoutParams(0, -2, 1));
                   root.addView(header);
-
-                  TextView line = text(
-                      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", 12, MINT);
-                  root.addView(line);
-
+                  root.addView(text("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", 12, MINT));
                   TextView heading = text(title, 25, WHITE);
                   heading.setTypeface(null, Typeface.BOLD);
                   heading.setPadding(0, dp(8), 0, dp(2));
                   root.addView(heading);
-
                   TextView desc = text(subtitle, 14, MUTED);
                   desc.setPadding(0, 0, 0, dp(8));
                   root.addView(desc);
-
                   ScrollView scroll = new ScrollView(this);
                   body = column();
                   scroll.addView(body);
-                  root.addView(scroll,
-                      new LinearLayout.LayoutParams(-1, 0, 1));
-
-                  TextView footer = text(
-                      "PIL UPP/NER  •  OK = VÄLJ  •  BACK = TILLBAKA",
-                      11, MUTED);
-                  root.addView(footer);
+                  root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+                  root.addView(text("PIL UPP/NER  •  OK = VÄLJ  •  BACK = TILLBAKA", 11, MUTED));
                   setContentView(root);
               }
 
               private void addButton(String label, Runnable action) {
                   TextView b = text(label, 17, WHITE);
-                  b.setFocusable(true);
-                  b.setClickable(true);
+                  b.setFocusable(true); b.setClickable(true);
                   b.setPadding(dp(14), dp(11), dp(14), dp(11));
                   b.setBackgroundColor(PANEL);
-
-                  LinearLayout.LayoutParams p =
-                      new LinearLayout.LayoutParams(-1, -2);
+                  LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2);
                   p.bottomMargin = dp(7);
                   body.addView(b, p);
-
                   b.setOnFocusChangeListener((v, focused) -> {
                       b.setBackgroundColor(focused ? MINT : PANEL);
                       b.setTextColor(focused ? BG : WHITE);
@@ -345,49 +272,45 @@ jobs:
               }
 
               private void showHome() {
-                  setup("Din spelkonsol",
-                      "Retrospel på TV:n med din egen spelsamling");
-
+                  controllerStatus = null;
+                  setup("Din spelkonsol", "Retrospel på TV:n med din egen spelsamling");
                   addButton("🎮  SPELBIBLIOTEK", this::showLibrary);
                   addButton("📂  LÄGG TILL SPEL", this::pickGames);
                   addButton("💾  VÄLJ USB / MINNESKORT", this::pickFolder);
                   addButton("🕹  KONSOLER", this::showConsoles);
                   addButton("🎛  TESTA HANDKONTROLL", this::showController);
                   addButton("⚙  INSTÄLLNINGAR", this::showSettings);
-
                   addNote("Valda spelfiler: " + games.size());
-                  addNote("Vald lagringsmapp: " +
-                      (selectedFolder == null ? "Ingen" : "Ja"));
+                  addNote("Vald lagringsmapp: " + (selectedFolder == null ? "Ingen" : "Ja"));
                   addNote("Parkoppla Bluetooth-kontrollen i TV:ns inställningar.");
                   body.getChildAt(0).requestFocus();
               }
 
               private void showLibrary() {
-                  setup("Spelbibliotek", "Spelfiler som du själv har valt");
-
+                  controllerStatus = null;
+                  setup("Spelbibliotek", "Spelfiler som du själv har valt eller hittat på USB");
                   addButton("＋  Lägg till spelfiler", this::pickGames);
+                  addButton("🔎  SKANNA VALD USB-MAPP", this::scanSelectedFolder);
+                  addButton("💾  VÄLJ / BYT USB-MAPP", this::pickFolder);
                   addButton("←  Tillbaka", this::showHome);
-
                   if (games.isEmpty()) {
-                      addNote("Inga spelfiler har lagts till ännu.");
-                      addNote("Välj Lägg till spelfiler för att välja egna filer.");
+                      addNote("Inga spel hittades eller lades till ännu.");
+                      addNote("Välj en USB-mapp och tryck sedan på SKANNA VALD USB-MAPP.");
                   } else {
+                      addNote("Hittade/valda filer: " + games.size());
                       for (int i = 0; i < games.size(); i++) {
                           final int index = i;
-                          addButton("🎮  " + gameNames.get(i),
-                              () -> showGame(index));
+                          addButton("🎮  " + gameNames.get(i), () -> showGame(index));
                       }
                   }
               }
 
               private void showGame(int index) {
                   setup(gameNames.get(index), "Vald spelfil");
-
                   addNote("Fil: " + gameNames.get(index));
                   addNote("Plats: " + games.get(index));
-                  addNote("Den här versionen innehåller ingen emulator.");
+                  addNote("Den här versionen innehåller ännu ingen inbyggd emulator.");
                   addNote("Spelfilen startar därför inte automatiskt ännu.");
-
                   addButton("←  Tillbaka till bibliotek", this::showLibrary);
               }
 
@@ -397,84 +320,57 @@ jobs:
                       i.setType("*/*");
                       i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
                       i.addCategory(Intent.CATEGORY_OPENABLE);
-                      i.addFlags(
-                          Intent.FLAG_GRANT_READ_URI_PERMISSION |
-                          Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
-
+                      i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
                       startActivityForResult(i, PICK_GAMES);
                   } catch (ActivityNotFoundException e) {
-                      showPickerError(
-                          "TV:n saknar en fungerande filväljare. Kontrollera " +
-                          "att systemappen Filer eller DocumentsUI är aktiverad.");
+                      showPickerError("TV:n saknar en fungerande filväljare. Kontrollera systemappen Filer eller DocumentsUI.");
                   } catch (Exception e) {
-                      showPickerError("Kunde inte öppna filväljaren: " +
-                          e.getClass().getSimpleName());
+                      showPickerError("Kunde inte öppna filväljaren: " + e.getClass().getSimpleName());
                   }
               }
 
               private void pickFolder() {
                   try {
                       Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
-                      i.addFlags(
-                          Intent.FLAG_GRANT_READ_URI_PERMISSION |
-                          Intent.FLAG_GRANT_WRITE_URI_PERMISSION |
-                          Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
-
+                      i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
                       startActivityForResult(i, PICK_FOLDER);
                   } catch (ActivityNotFoundException e) {
-                      showPickerError(
-                          "TV:n saknar en fungerande mappväljare. Kontrollera " +
-                          "systemappen Filer eller DocumentsUI i TV:ns inställningar.");
+                      showPickerError("TV:n saknar en fungerande mappväljare. Kontrollera systemappen Filer eller DocumentsUI.");
                   } catch (Exception e) {
-                      showPickerError("Kunde inte öppna mappväljaren: " +
-                          e.getClass().getSimpleName());
+                      showPickerError("Kunde inte öppna mappväljaren: " + e.getClass().getSimpleName());
                   }
               }
 
               private void showPickerError(String message) {
+                  controllerStatus = null;
                   setup("Filväljaren kunde inte öppnas", "Android-TV");
                   addNote(message);
-                  addNote("Appen kan inte själv installera eller ersätta TV:ns systemväljare.");
                   addButton("←  Tillbaka", this::showHome);
               }
 
-              @Override
-              protected void onActivityResult(int requestCode, int resultCode,
-                                              Intent data) {
+              @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
                   super.onActivityResult(requestCode, resultCode, data);
-
                   if (resultCode != RESULT_OK || data == null) return;
-
                   if (requestCode == PICK_GAMES) {
                       ClipData clip = data.getClipData();
-
                       if (clip != null) {
-                          for (int n = 0; n < clip.getItemCount(); n++) {
-                              addGame(clip.getItemAt(n).getUri(), data.getFlags());
-                          }
+                          for (int n = 0; n < clip.getItemCount(); n++) addGame(clip.getItemAt(n).getUri(), data.getFlags());
                       } else if (data.getData() != null) {
                           addGame(data.getData(), data.getFlags());
                       }
                       showLibrary();
-
                   } else if (requestCode == PICK_FOLDER) {
                       Uri folder = data.getData();
                       if (folder != null) {
-                          int grantFlags = data.getFlags() &
-                              (Intent.FLAG_GRANT_READ_URI_PERMISSION |
-                               Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-
+                          int grants = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
                           try {
-                              getContentResolver().takePersistableUriPermission(
-                                  folder, grantFlags);
-                          } catch (SecurityException ignored) {
-                              // Some providers do not offer persistent grants.
-                          }
-
+                              getContentResolver().takePersistableUriPermission(folder, grants & Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                          } catch (Exception ignored) { }
                           selectedFolder = folder;
                           setup("USB / minneskort", "Lagringsmapp vald");
-                          addNote(folder.toString());
-                          addNote("Mappen är vald, men innehållet genomsöks inte automatiskt ännu.");
+                          addNote("Mappen är vald. Innehållet ändras inte av skanningen.");
+                          addNote("Öppna spelbiblioteket och välj SKANNA VALD USB-MAPP.");
+                          addButton("SKANNA NU", this::scanSelectedFolder);
                           addButton("←  Tillbaka", this::showHome);
                       }
                   }
@@ -482,54 +378,102 @@ jobs:
 
               private void addGame(Uri uri, int returnedFlags) {
                   if (uri == null || games.contains(uri)) return;
-
-                  int grantFlags = returnedFlags &
-                      (Intent.FLAG_GRANT_READ_URI_PERMISSION |
-                       Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-
+                  int grantFlags = returnedFlags & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
                   try {
-                      getContentResolver().takePersistableUriPermission(
-                          uri, grantFlags & Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                  } catch (Exception ignored) {
-                      // The selected URI can still be usable for this session.
-                  }
-
+                      getContentResolver().takePersistableUriPermission(uri, grantFlags & Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                  } catch (Exception ignored) { }
                   games.add(uri);
-
                   String name = uri.getLastPathSegment();
-                  if (name == null || name.isEmpty()) {
-                      name = "Spel " + games.size();
-                  }
+                  if (name == null || name.isEmpty()) name = "Spel " + games.size();
                   int slash = name.lastIndexOf('/');
                   if (slash >= 0) name = name.substring(slash + 1);
                   gameNames.add(name);
               }
 
-              private void showConsoles() {
-                  setup("Konsoler", "Planerad kompatibilitet");
-
-                  String[] consoles = {
-                      "Nintendo Entertainment System (NES)",
-                      "Super Nintendo (SNES)",
-                      "Nintendo 64",
-                      "Game Boy / Game Boy Color",
-                      "Game Boy Advance",
-                      "Nintendo DS",
-                      "Sega Master System",
-                      "Sega Mega Drive / Genesis",
-                      "Sega Saturn",
-                      "PlayStation",
-                      "PlayStation 2",
-                      "PlayStation Portable (PSP)",
-                      "Arcade / MAME",
-                      "Atari",
-                      "Commodore 64"
+              private boolean isRomFile(String name) {
+                  String n = name.toLowerCase(Locale.ROOT);
+                  String[] extensions = {
+                      ".nes", ".unf", ".unif", ".smc", ".sfc", ".fig",
+                      ".gb", ".gbc", ".gba", ".nds", ".n64", ".z64", ".v64",
+                      ".md", ".gen", ".sms", ".gg", ".cue", ".iso", ".chd",
+                      ".pbp", ".cso", ".a26", ".a78", ".lnx", ".d64", ".tap",
+                      ".adf", ".zip", ".7z"
                   };
+                  for (String ext : extensions) if (n.endsWith(ext)) return true;
+                  return false;
+              }
 
-                  for (String console : consoles) {
-                      addNote("•  " + console);
+              private void scanSelectedFolder() {
+                  if (selectedFolder == null) {
+                      setup("Välj USB-mapp först", "Välj lagringen innan du skannar");
+                      addButton("VÄLJ USB / MINNESKORT", this::pickFolder);
+                      addButton("←  Tillbaka", this::showHome);
+                      return;
                   }
+                  int before = games.size();
+                  try {
+                      String rootId = DocumentsContract.getTreeDocumentId(selectedFolder);
+                      scanFolder(selectedFolder, rootId, 0);
+                      int found = games.size() - before;
+                      setup("Skanning klar", "Nya spel hittade: " + found);
+                      addNote("Totalt i biblioteket: " + games.size());
+                      addNote("Skanningen läser filer. Den formaterar eller skriver inte till lagringen.");
+                      addNote("Om inget hittas kan filsystemet eller TV:ns filväljare begränsa åtkomsten.");
+                      addButton("VISA SPELBIBLIOTEK", this::showLibrary);
+                      addButton("←  Tillbaka", this::showHome);
+                  } catch (Exception e) {
+                      setup("Skanningen misslyckades", "Kontrollera att USB-mappen fortfarande är tillgänglig");
+                      addNote("Feltyp: " + e.getClass().getSimpleName());
+                      addButton("FÖRSÖK IGEN", this::scanSelectedFolder);
+                      addButton("←  Tillbaka", this::showLibrary);
+                  }
+              }
 
+              private void scanFolder(Uri treeUri, String documentId, int depth) {
+                  if (depth > MAX_SCAN_DEPTH || games.size() >= MAX_SCANNED_GAMES) return;
+                  Cursor cursor = null;
+                  try {
+                      Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, documentId);
+                      cursor = getContentResolver().query(childrenUri,
+                          new String[] {
+                              DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                              DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                              DocumentsContract.Document.COLUMN_MIME_TYPE
+                          }, null, null, null);
+                      if (cursor == null) return;
+                      while (cursor.moveToNext() && games.size() < MAX_SCANNED_GAMES) {
+                          String id = cursor.getString(0);
+                          String name = cursor.getString(1);
+                          String mime = cursor.getString(2);
+                          if (id == null || name == null) continue;
+                          if (DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)) {
+                              scanFolder(treeUri, id, depth + 1);
+                          } else if (isRomFile(name)) {
+                              Uri fileUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id);
+                              if (!games.contains(fileUri)) {
+                                  games.add(fileUri);
+                                  gameNames.add(name);
+                              }
+                          }
+                      }
+                  } catch (Exception ignored) {
+                      // Hoppa över mappar som inte kan läsas; ändra aldrig lagringen.
+                  } finally {
+                      if (cursor != null) cursor.close();
+                  }
+              }
+
+              private void showConsoles() {
+                  controllerStatus = null;
+                  setup("Konsoler", "Planerad kompatibilitet");
+                  String[] consoles = {
+                      "Nintendo Entertainment System (NES)", "Super Nintendo (SNES)", "Nintendo 64",
+                      "Game Boy / Game Boy Color", "Game Boy Advance", "Nintendo DS",
+                      "Sega Master System", "Sega Mega Drive / Genesis", "Sega Saturn",
+                      "PlayStation", "PlayStation 2", "PlayStation Portable (PSP)",
+                      "Arcade / MAME", "Atari", "Commodore 64"
+                  };
+                  for (String console : consoles) addNote("•  " + console);
                   addNote("Detta är en önskelista, inte en lista över färdiga emulatorer.");
                   addButton("←  Tillbaka", this::showHome);
               }
@@ -537,140 +481,91 @@ jobs:
               private boolean isGameController(InputDevice device) {
                   if (device == null) return false;
                   int sources = device.getSources();
-                  return ((sources & InputDevice.SOURCE_GAMEPAD) ==
-                          InputDevice.SOURCE_GAMEPAD)
-                      || ((sources & InputDevice.SOURCE_JOYSTICK) ==
-                          InputDevice.SOURCE_JOYSTICK);
+                  return ((sources & InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD)
+                      || ((sources & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK);
               }
 
               private String getControllerList() {
                   StringBuilder result = new StringBuilder();
-                  int[] ids = InputDevice.getDeviceIds();
                   int count = 0;
-
-                  for (int id : ids) {
+                  for (int id : InputDevice.getDeviceIds()) {
                       InputDevice device = InputDevice.getDevice(id);
                       if (isGameController(device)) {
                           count++;
-                          result.append("• ")
-                              .append(device.getName())
-                              .append("\n");
+                          result.append("• ").append(device.getName()).append("\n");
                       }
                   }
-
-                  if (count == 0) {
-                      return "Ingen spelkontroll upptäckt just nu.\n" +
-                          "Parkoppla kontrollen i TV:ns Bluetooth-inställningar.";
-                  }
-
-                  return "Upptäckta spelkontroller (" + count + "):\n" +
-                      result.toString();
+                  if (count == 0) return "Ingen spelkontroll upptäckt just nu.\nParkoppla kontrollen i TV:ns Bluetooth-inställningar.";
+                  return "Upptäckta spelkontroller (" + count + "):\n" + result;
               }
 
               private void refreshControllerStatus() {
-                  if (controllerStatus != null) {
-                      controllerStatus.setText(getControllerList());
-                  }
+                  if (controllerStatus != null) controllerStatus.setText(getControllerList());
               }
 
               private void showController() {
                   setup("Handkontroll", "Testa kontrollen som TV:n känner igen");
-
                   addNote("1. Öppna TV:ns Inställningar.");
                   addNote("2. Välj Bluetooth eller Tillbehör och parkoppla kontrollen.");
                   addNote("3. Gå tillbaka hit och tryck på knapparna.");
-
                   controllerStatus = text(getControllerList(), 15, MINT);
                   controllerStatus.setPadding(0, dp(12), 0, dp(12));
                   controllerStatus.setFocusable(true);
                   controllerStatus.setOnKeyListener((v, keyCode, event) -> {
                       if (event.getAction() == KeyEvent.ACTION_DOWN) {
-                          controllerStatus.setText(
-                              "Knapp registrerad: " +
-                              KeyEvent.keyCodeToString(keyCode) +
-                              "\n\n" + getControllerList());
+                          controllerStatus.setText("Knapp registrerad: " + KeyEvent.keyCodeToString(keyCode) + "\n\n" + getControllerList());
                           return true;
                       }
                       return false;
                   });
-
                   controllerStatus.setOnGenericMotionListener((v, event) -> {
-                      if ((event.getSource() & InputDevice.SOURCE_JOYSTICK) ==
-                          InputDevice.SOURCE_JOYSTICK &&
-                          event.getAction() == MotionEvent.ACTION_MOVE) {
+                      if ((event.getSource() & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
+                          && event.getAction() == MotionEvent.ACTION_MOVE) {
                           float x = event.getAxisValue(MotionEvent.AXIS_X);
                           float y = event.getAxisValue(MotionEvent.AXIS_Y);
-                          float rx = event.getAxisValue(MotionEvent.AXIS_RX);
-                          float ry = event.getAxisValue(MotionEvent.AXIS_RY);
-
-                          controllerStatus.setText(
-                              "Styrspak registrerad\n" +
-                              "Vänster: X " + String.format("%.2f", x) +
-                              ", Y " + String.format("%.2f", y) +
-                              "\nHöger: X " + String.format("%.2f", rx) +
-                              ", Y " + String.format("%.2f", ry) +
-                              "\n\n" + getControllerList());
+                          controllerStatus.setText("Styrspak registrerad\nVänster: X " + String.format(Locale.ROOT, "%.2f", x)
+                              + ", Y " + String.format(Locale.ROOT, "%.2f", y) + "\n\n" + getControllerList());
                           return true;
                       }
                       return false;
                   });
-
                   body.addView(controllerStatus);
                   controllerStatus.setFocusableInTouchMode(true);
                   controllerStatus.requestFocus();
-
                   addButton("Uppdatera lista", this::refreshControllerStatus);
                   addButton("←  Tillbaka", this::showHome);
               }
 
-              @Override
-              public boolean dispatchKeyEvent(KeyEvent event) {
-                  if (controllerStatus != null &&
-                      event.getAction() == KeyEvent.ACTION_DOWN &&
-                      event.getKeyCode() != KeyEvent.KEYCODE_BACK) {
+              @Override public boolean dispatchKeyEvent(KeyEvent event) {
+                  if (controllerStatus != null && event.getAction() == KeyEvent.ACTION_DOWN
+                      && event.getKeyCode() != KeyEvent.KEYCODE_BACK) {
                       InputDevice device = event.getDevice();
                       if (device != null && isGameController(device)) {
-                          controllerStatus.setText(
-                              "Knapp registrerad: " +
-                              KeyEvent.keyCodeToString(event.getKeyCode()) +
-                              "\nKontroll: " + device.getName() +
-                              "\n\n" + getControllerList());
+                          controllerStatus.setText("Knapp registrerad: " + KeyEvent.keyCodeToString(event.getKeyCode())
+                              + "\nKontroll: " + device.getName() + "\n\n" + getControllerList());
                       }
                   }
                   return super.dispatchKeyEvent(event);
               }
 
-              @Override
-              public void onInputDeviceAdded(int deviceId) {
-                  refreshControllerStatus();
-              }
-
-              @Override
-              public void onInputDeviceRemoved(int deviceId) {
-                  refreshControllerStatus();
-              }
-
-              @Override
-              public void onInputDeviceChanged(int deviceId) {
-                  refreshControllerStatus();
-              }
+              @Override public void onInputDeviceAdded(int deviceId) { refreshControllerStatus(); }
+              @Override public void onInputDeviceRemoved(int deviceId) { refreshControllerStatus(); }
+              @Override public void onInputDeviceChanged(int deviceId) { refreshControllerStatus(); }
 
               private void showSettings() {
+                  controllerStatus = null;
                   setup("Inställningar", "Information om denna testversion");
-
                   addNote("App: RetroPUSBTV");
-                  addNote("Version: 1.1");
+                  addNote("Version: 1.2");
                   addNote("Styrning: TV-fjärrkontroll och kompatibla Android-kontroller.");
                   addNote("Bluetooth parkopplas via TV:ns systeminställningar.");
                   addNote("USB: välj lagring via Androids filväljare.");
-                  addNote("Automatisk ROM-skanning och emulator saknas ännu.");
+                  addNote("USB-skanning finns; emulator saknas ännu.");
                   addNote("Använd endast spel och BIOS-filer du har rätt att använda.");
-
                   addButton("←  Tillbaka", this::showHome);
               }
 
-              @Override
-              public boolean onKeyDown(int keyCode, KeyEvent event) {
+              @Override public boolean onKeyDown(int keyCode, KeyEvent event) {
                   if (keyCode == KeyEvent.KEYCODE_BACK) {
                       controllerStatus = null;
                       showHome();
